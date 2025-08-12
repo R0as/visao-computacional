@@ -157,18 +157,25 @@ export default function DetectorPage() {
     }
 
     function knnClassify(inputFeature, kNearest = 3) {
-        const training = trainingDataRef.current;
-        if (!training || training.length === 0) return { label: null, confidence: 0 };
-        const distances = training.map(sample => ({ label: sample.label, dist: euclideanDistance(inputFeature, sample.features) }));
-        distances.sort((a, b) => a.dist - b.dist);
-        const topK = distances.slice(0, kNearest);
-        const counts = {};
-        topK.forEach(n => counts[n.label] = (counts[n.label] || 0) + 1);
-        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-        const label = sorted[0][0];
-        const confidence = sorted[0][1] / kNearest;
-        return { label, confidence };
-    }
+    const training = trainingDataRef.current;
+    if (!training || training.length === 0) return [];
+
+    const distances = training.map(sample => ({ label: sample.label, dist: euclideanDistance(inputFeature, sample.features) }));
+    distances.sort((a, b) => a.dist - b.dist);
+    const topK = distances.slice(0, kNearest);
+    
+    const counts = {};
+    topK.forEach(n => counts[n.label] = (counts[n.label] || 0) + 1);
+
+    const results = Object.entries(counts)
+        .map(([label, count]) => ({
+            label: label,
+            confidence: count / kNearest // Calcula a % de votos
+        }))
+        .sort((a, b) => b.confidence - a.confidence); // Ordena pelo mais votado
+
+    return results; // Retorna a lista completa de resultados
+}
 
     async function addExample(label) {
     if (!label) {
@@ -266,49 +273,61 @@ export default function DetectorPage() {
         const offscreenCanvas = document.createElement('canvas');
 
         const predictionInterval = setInterval(async () => {
-            if (isCameraOn && graphModelRef.current && !useCoco && !useKnn) {
-                const video = videoRef.current;
-                if (!video || video.readyState < 2 || video.videoWidth === 0) return;
-                try {
-                    offscreenCanvas.width = video.videoWidth;
-                    offscreenCanvas.height = video.videoHeight;
-                    offscreenCanvas.getContext('2d').drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-                    
-                    const tf = await import("@tensorflow/tfjs");
-                    const result = tf.tidy(() => {
-                        const imgTensor = tf.browser.fromPixels(offscreenCanvas).toFloat();
-                        const inputShape = graphModelRef.current.inputs[0].shape;
-                        let resizedTensor = imgTensor;
-                        if (inputShape && inputShape.length === 4) {
-                            const targetH = inputShape[1] || video.videoHeight;
-                            const targetW = inputShape[2] || video.videoWidth;
-                            resizedTensor = tf.image.resizeBilinear(imgTensor, [targetH, targetW]);
-                        }
-                        const normalized = resizedTensor.div(255.0);
-                        const batched = normalized.expandDims(0);
-                        return graphModelRef.current.predict(batched);
-                    });
-
-                    const scoresTensor = Array.isArray(result) ? result[result.length - 1] : result;
-                    const scores = await scoresTensor.data();
-                    const maxIdx = scores.indexOf(Math.max(...scores));
-                    const labels = classLabelsRef.current;
-                    const className = labels[maxIdx] || `Classe ${maxIdx}`;
-                    const confidence = (scores[maxIdx] * 100).toFixed(1);
-                    lastPredictionTextRef.current = `${className} — ${confidence}%`;
-                    
-                    if (result) {
-                        if (Array.isArray(result)) result.forEach(r => r.dispose()); else result.dispose();
-                    }
-                    if (scoresTensor && scoresTensor !== result) scoresTensor.dispose();
-                } catch (err) {
-                    console.error("Erro na predição em background:", err);
-                    lastPredictionTextRef.current = "Erro na predição";
+    if (isCameraOn && graphModelRef.current && !useCoco && !useKnn) {
+        const video = videoRef.current;
+        if (!video || video.readyState < 2 || video.videoWidth === 0) return;
+        try {
+            // ... (a parte de preparação do offscreenCanvas e da predição continua igual)
+            offscreenCanvas.width = video.videoWidth;
+            offscreenCanvas.height = video.videoHeight;
+            offscreenCanvas.getContext('2d').drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+            
+            const tf = await import("@tensorflow/tfjs");
+            const result = tf.tidy(() => {
+                const imgTensor = tf.browser.fromPixels(offscreenCanvas).toFloat();
+                const inputShape = graphModelRef.current.inputs[0].shape;
+                let resizedTensor = imgTensor;
+                if (inputShape && inputShape.length === 4) {
+                    const targetH = inputShape[1] || video.videoHeight;
+                    const targetW = inputShape[2] || video.videoWidth;
+                    resizedTensor = tf.image.resizeBilinear(imgTensor, [targetH, targetW]);
                 }
-            } else {
-                lastPredictionTextRef.current = '';
+                const normalized = resizedTensor.div(255.0);
+                const batched = normalized.expandDims(0);
+                return graphModelRef.current.predict(batched);
+            });
+
+            const scoresTensor = Array.isArray(result) ? result[result.length - 1] : result;
+            const scores = await scoresTensor.data();
+            const labels = classLabelsRef.current;
+
+            // --- MUDANÇA PRINCIPAL AQUI ---
+            // Em vez de pegar só o maior, vamos criar uma lista com todos.
+            const allPredictions = Array.from(scores)
+                .map((score, index) => ({
+                    label: labels[index] || `Classe ${index}`,
+                    confidence: score
+                }))
+                .sort((a, b) => b.confidence - a.confidence) // Ordena da maior confiança para a menor
+                .filter(p => p.confidence > 0.01); // Filtra resultados muito pequenos para não poluir a tela
+
+            // Formata a lista para exibição e a salva na nossa ref
+            lastPredictionTextRef.current = allPredictions; 
+            
+            // Limpeza de memória
+            if (result) {
+                if (Array.isArray(result)) result.forEach(r => r.dispose()); else result.dispose();
             }
-        }, 100);
+            if (scoresTensor && scoresTensor !== result) scoresTensor.dispose();
+
+        } catch (err) {
+            console.error("Erro na predição em background:", err);
+            lastPredictionTextRef.current = [{ label: "Erro na predição", confidence: 1 }];
+        }
+    } else {
+        lastPredictionTextRef.current = [];
+    }
+}, 100);
 
         let rafId;
         async function frameLoop() {
@@ -325,30 +344,57 @@ export default function DetectorPage() {
             if (useCoco && cocoRef.current) {
                 const predictions = await cocoRef.current.detect(video);
                 drawCocoDetections(ctx, predictions);
-            } else if (useKnn) {
-                const { label, confidence } = await predictKNN();
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                if (label) {
-                    const text = `${label} — ${(confidence * 100).toFixed(0)}%`;
-                    ctx.font = '22px Arial';
-                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                    ctx.fillRect(8, canvas.height - 40, ctx.measureText(text).width + 12, 32);
-                    ctx.fillStyle = '#00FFAA';
-                    ctx.fillText(text, 12, canvas.height - 16);
-                }
-            } else {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const textToDraw = lastPredictionTextRef.current;
-                if (textToDraw) {
-                    ctx.font = '22px Arial';
-                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                    ctx.fillRect(8, canvas.height - 40, ctx.measureText(textToDraw).width + 12, 32);
-                    ctx.fillStyle = '#00FFAA';
-                    ctx.fillText(textToDraw, 12, canvas.height - 16);
-                }
-            }
+// Dentro do frameLoop, substitua o bloco 'else if (useKnn)'
+
+} else if (useKnn) {
+    const predictions = await predictKNN(); // Agora predictKNN retorna um array
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    if (predictions && predictions.length > 0) {
+        predictions.forEach((prediction, index) => {
+            const text = `${prediction.label} — ${(prediction.confidence * 100).toFixed(0)}%`;
+            const yPos = canvas.height - 40 - (index * 30);
+
+            ctx.font = '20px Arial';
+            const textWidth = ctx.measureText(text).width;
+            
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(8, yPos - 22, textWidth + 12, 28);
+
+            ctx.fillStyle = index === 0 ? '#00FFAA' : '#FFFFFF';
+
+            ctx.fillText(text, 12, yPos);
+        });
+    }
+} else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    const predictionsToDraw = lastPredictionTextRef.current;
+
+    // Verifica se há predições para desenhar
+    if (predictionsToDraw && predictionsToDraw.length > 0) {
+        
+        // Desenha cada predição em uma linha
+        predictionsToDraw.forEach((prediction, index) => {
+            const text = `${prediction.label} — ${(prediction.confidence * 100).toFixed(1)}%`;
+            const yPos = canvas.height - 40 - (index * 30); // Calcula a posição Y para cada linha
+
+            ctx.font = '20px Arial';
+            const textWidth = ctx.measureText(text).width;
+
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(8, yPos - 22, textWidth + 12, 28);
+            
+            // Destaca a predição principal
+            ctx.fillStyle = index === 0 ? '#00FFAA' : '#FFFFFF'; 
+            
+            ctx.fillText(text, 12, yPos);
+        });
+    }
+}
             rafId = requestAnimationFrame(frameLoop);
         }
 
