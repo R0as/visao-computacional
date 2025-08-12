@@ -36,19 +36,28 @@ export default function DetectorPage() {
     }
 
     async function startCamera() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                await videoRef.current.play();
-                setIsCameraOn(true);
-                setStatus("Câmera ligada");
+    try {
+        const constraints = {
+            audio: false,
+            video: {
+                width: 640,
+                height: 480,
+                facingMode: { ideal: 'environment' } // <-- A MUDANÇA ESTÁ AQUI
             }
-        } catch (err) {
-            console.error(err);
-            setStatus("Erro ao acessar a câmera: " + err.message);
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            await videoRef.current.play();
+            setIsCameraOn(true);
+            setStatus("Câmera ligada");
         }
+    } catch (err) {
+        console.error(err);
+        setStatus("Erro ao acessar a câmera: " + err.message);
     }
+}
 
     function stopCamera() {
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -61,6 +70,16 @@ export default function DetectorPage() {
         setIsCameraOn(false);
         setStatus("Câmera desligada");
     }
+
+    function handleKnnToggle() {
+    const isActivating = !useKnn;
+    setUseKnn(isActivating);
+
+    // Se estivermos ATIVANDO o k-NN, devemos desativar os outros modos.
+    if (isActivating) {
+        setUseCoco(false);
+    }
+}
 
     async function loadCocoModel() {
         setLoadingModel(true);
@@ -384,7 +403,7 @@ export default function DetectorPage() {
                             <label className="flex items-center gap-2">k:
                                 <input type="number" min="1" max="20" value={k} onChange={(e) => setK(parseInt(e.target.value || 1))} className="w-16 px-2 py-1 border rounded" />
                             </label>
-                            <button className={`px-3 py-2 rounded ${useKnn ? 'bg-red-600' : 'bg-green-600'} text-white`} onClick={() => setUseKnn(!useKnn)}>{useKnn ? 'Desativar K-NN' : 'Ativar K-NN'}</button>
+                            <button className={`px-3 py-2 rounded ${useKnn ? 'bg-red-600' : 'bg-green-600'} text-white`} onClick={handleKnnToggle}>{useKnn ? 'Desativar K-NN' : 'Ativar K-NN'}</button>
                         </div>
                         <div className="flex gap-2">
                             <button className="px-3 py-2 rounded bg-amber-500" onClick={saveDataset}>Salvar dataset</button>
