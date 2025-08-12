@@ -15,6 +15,7 @@ export default function DetectorPage() {
     const trainingDataRef = useRef([]);
     const classLabelsRef = useRef([]);
     const lastPredictionTextRef = useRef('');
+    const fileInputRef = useRef(null);
 
     const [isCameraOn, setIsCameraOn] = useState(false);
     const [loadingModel, setLoadingModel] = useState(false);
@@ -36,28 +37,28 @@ export default function DetectorPage() {
     }
 
     async function startCamera() {
-    try {
-        const constraints = {
-            audio: false,
-            video: {
-                width: 640,
-                height: 480,
-                facingMode: { ideal: 'environment' } // <-- A MUDANÇA ESTÁ AQUI
+        try {
+            const constraints = {
+                audio: false,
+                video: {
+                    width: 640,
+                    height: 480,
+                    facingMode: { ideal: 'environment' } // <-- A MUDANÇA ESTÁ AQUI
+                }
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                await videoRef.current.play();
+                setIsCameraOn(true);
+                setStatus("Câmera ligada");
             }
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        
-        if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play();
-            setIsCameraOn(true);
-            setStatus("Câmera ligada");
+        } catch (err) {
+            console.error(err);
+            setStatus("Erro ao acessar a câmera: " + err.message);
         }
-    } catch (err) {
-        console.error(err);
-        setStatus("Erro ao acessar a câmera: " + err.message);
     }
-}
 
     function stopCamera() {
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -72,14 +73,14 @@ export default function DetectorPage() {
     }
 
     function handleKnnToggle() {
-    const isActivating = !useKnn;
-    setUseKnn(isActivating);
+        const isActivating = !useKnn;
+        setUseKnn(isActivating);
 
-    // Se estivermos ATIVANDO o k-NN, devemos desativar os outros modos.
-    if (isActivating) {
-        setUseCoco(false);
+        // Se estivermos ATIVANDO o k-NN, devemos desativar os outros modos.
+        if (isActivating) {
+            setUseCoco(false);
+        }
     }
-}
 
     async function loadCocoModel() {
         setLoadingModel(true);
@@ -126,26 +127,26 @@ export default function DetectorPage() {
     }
 
     async function loadMobileNet() {
-    // Correção: Adiciona uma mensagem de status se o modelo já estiver carregado
-    if (mobilenetRef.current) {
-        setStatus("MobileNet já está carregado.");
-        return mobilenetRef.current;
-    }
+        // Correção: Adiciona uma mensagem de status se o modelo já estiver carregado
+        if (mobilenetRef.current) {
+            setStatus("MobileNet já está carregado.");
+            return mobilenetRef.current;
+        }
 
-    setLoadingModel(true);
-    setStatus("Carregando MobileNet (feature extractor)...");
-    try {
-        const mobilenetModule = await import("@tensorflow-models/mobilenet");
-        mobilenetRef.current = await mobilenetModule.load();
-        setStatus("MobileNet carregado");
-        return mobilenetRef.current;
-    } catch (err) {
-        console.error(err);
-        setStatus("Erro ao carregar MobileNet: " + err.message);
-    } finally {
-        setLoadingModel(false);
+        setLoadingModel(true);
+        setStatus("Carregando MobileNet (feature extractor)...");
+        try {
+            const mobilenetModule = await import("@tensorflow-models/mobilenet");
+            mobilenetRef.current = await mobilenetModule.load();
+            setStatus("MobileNet carregado");
+            return mobilenetRef.current;
+        } catch (err) {
+            console.error(err);
+            setStatus("Erro ao carregar MobileNet: " + err.message);
+        } finally {
+            setLoadingModel(false);
+        }
     }
-}
 
     function euclideanDistance(a, b) {
         let sum = 0;
@@ -157,53 +158,53 @@ export default function DetectorPage() {
     }
 
     function knnClassify(inputFeature, kNearest = 3) {
-    const training = trainingDataRef.current;
-    if (!training || training.length === 0) return [];
+        const training = trainingDataRef.current;
+        if (!training || training.length === 0) return [];
 
-    const distances = training.map(sample => ({ label: sample.label, dist: euclideanDistance(inputFeature, sample.features) }));
-    distances.sort((a, b) => a.dist - b.dist);
-    const topK = distances.slice(0, kNearest);
-    
-    const counts = {};
-    topK.forEach(n => counts[n.label] = (counts[n.label] || 0) + 1);
+        const distances = training.map(sample => ({ label: sample.label, dist: euclideanDistance(inputFeature, sample.features) }));
+        distances.sort((a, b) => a.dist - b.dist);
+        const topK = distances.slice(0, kNearest);
 
-    const results = Object.entries(counts)
-        .map(([label, count]) => ({
-            label: label,
-            confidence: count / kNearest // Calcula a % de votos
-        }))
-        .sort((a, b) => b.confidence - a.confidence); // Ordena pelo mais votado
+        const counts = {};
+        topK.forEach(n => counts[n.label] = (counts[n.label] || 0) + 1);
 
-    return results; // Retorna a lista completa de resultados
-}
+        const results = Object.entries(counts)
+            .map(([label, count]) => ({
+                label: label,
+                confidence: count / kNearest // Calcula a % de votos
+            }))
+            .sort((a, b) => b.confidence - a.confidence); // Ordena pelo mais votado
+
+        return results; // Retorna a lista completa de resultados
+    }
 
     async function addExample(label) {
-    if (!label) {
-        setStatus("Informe um rótulo antes de adicionar exemplos.");
-        return;
+        if (!label) {
+            setStatus("Informe um rótulo antes de adicionar exemplos.");
+            return;
+        }
+        await loadMobileNet();
+        const mobilenet = mobilenetRef.current;
+        if (!mobilenet || !videoRef.current) {
+            setStatus("MobileNet ou câmera não disponíveis.");
+            return;
+        }
+        try {
+            const tf = await import("@tensorflow/tfjs");
+            const features = tf.tidy(() => {
+                const activation = mobilenet.infer(videoRef.current, true);
+                return Array.from(activation.dataSync());
+            });
+            const newTrainingData = [...trainingDataRef.current, { label, features }];
+            updateTrainingData(newTrainingData);
+            setStatus(`Exemplo adicionado para: ${label} (total: ${newTrainingData.length})`);
+            localStorage.setItem('knnDataset', JSON.stringify(newTrainingData));
+            // A linha setExampleLabel(""); foi removida daqui.
+        } catch (err) {
+            console.error(err);
+            setStatus("Erro ao capturar exemplo: " + err.message);
+        }
     }
-    await loadMobileNet();
-    const mobilenet = mobilenetRef.current;
-    if (!mobilenet || !videoRef.current) {
-        setStatus("MobileNet ou câmera não disponíveis.");
-        return;
-    }
-    try {
-        const tf = await import("@tensorflow/tfjs");
-        const features = tf.tidy(() => {
-            const activation = mobilenet.infer(videoRef.current, true);
-            return Array.from(activation.dataSync());
-        });
-        const newTrainingData = [...trainingDataRef.current, { label, features }];
-        updateTrainingData(newTrainingData);
-        setStatus(`Exemplo adicionado para: ${label} (total: ${newTrainingData.length})`);
-        localStorage.setItem('knnDataset', JSON.stringify(newTrainingData));
-        // A linha setExampleLabel(""); foi removida daqui.
-    } catch (err) {
-        console.error(err);
-        setStatus("Erro ao capturar exemplo: " + err.message);
-    }
-}
 
     function saveDataset() {
         try {
@@ -269,65 +270,126 @@ export default function DetectorPage() {
         });
     }
 
+    function exportDataset() {
+        if (trainingDataRef.current.length === 0) {
+            setStatus("Nenhum dataset para exportar.");
+            return;
+        }
+
+        // Converte o array de dados para um texto JSON formatado
+        const jsonString = JSON.stringify(trainingDataRef.current, null, 2);
+
+        // Cria um objeto "Blob", que é como um arquivo em memória
+        const blob = new Blob([jsonString], { type: 'application/json' });
+
+        // Cria uma URL temporária para esse arquivo
+        const url = URL.createObjectURL(blob);
+
+        // Cria um link <a> invisível para iniciar o download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `knn-dataset-${Date.now()}.json`; // Nome do arquivo
+        document.body.appendChild(a);
+        a.click();
+
+        // Limpa o link e a URL da memória
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        setStatus("Dataset exportado com sucesso!");
+    }
+
+    function importDataset(event) {
+        const file = event.target.files[0];
+        if (!file) {
+            return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            try {
+                const text = e.target.result;
+                const data = JSON.parse(text);
+
+                // Validação simples para ver se o arquivo parece correto
+                if (Array.isArray(data) && data.every(item => item.label && item.features)) {
+                    updateTrainingData(data);
+                    setStatus(`Dataset importado com ${data.length} exemplos.`);
+                } else {
+                    setStatus("Erro: Arquivo JSON em formato inválido.");
+                }
+            } catch (err) {
+                console.error(err);
+                setStatus("Erro ao ler ou interpretar o arquivo JSON.");
+            }
+        };
+
+        reader.readAsText(file);
+
+        // Limpa o valor do input para permitir importar o mesmo arquivo novamente
+        event.target.value = null;
+    }
+
     useEffect(() => {
         const offscreenCanvas = document.createElement('canvas');
 
         const predictionInterval = setInterval(async () => {
-    if (isCameraOn && graphModelRef.current && !useCoco && !useKnn) {
-        const video = videoRef.current;
-        if (!video || video.readyState < 2 || video.videoWidth === 0) return;
-        try {
-            // ... (a parte de preparação do offscreenCanvas e da predição continua igual)
-            offscreenCanvas.width = video.videoWidth;
-            offscreenCanvas.height = video.videoHeight;
-            offscreenCanvas.getContext('2d').drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-            
-            const tf = await import("@tensorflow/tfjs");
-            const result = tf.tidy(() => {
-                const imgTensor = tf.browser.fromPixels(offscreenCanvas).toFloat();
-                const inputShape = graphModelRef.current.inputs[0].shape;
-                let resizedTensor = imgTensor;
-                if (inputShape && inputShape.length === 4) {
-                    const targetH = inputShape[1] || video.videoHeight;
-                    const targetW = inputShape[2] || video.videoWidth;
-                    resizedTensor = tf.image.resizeBilinear(imgTensor, [targetH, targetW]);
+            if (isCameraOn && graphModelRef.current && !useCoco && !useKnn) {
+                const video = videoRef.current;
+                if (!video || video.readyState < 2 || video.videoWidth === 0) return;
+                try {
+                    // ... (a parte de preparação do offscreenCanvas e da predição continua igual)
+                    offscreenCanvas.width = video.videoWidth;
+                    offscreenCanvas.height = video.videoHeight;
+                    offscreenCanvas.getContext('2d').drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+                    const tf = await import("@tensorflow/tfjs");
+                    const result = tf.tidy(() => {
+                        const imgTensor = tf.browser.fromPixels(offscreenCanvas).toFloat();
+                        const inputShape = graphModelRef.current.inputs[0].shape;
+                        let resizedTensor = imgTensor;
+                        if (inputShape && inputShape.length === 4) {
+                            const targetH = inputShape[1] || video.videoHeight;
+                            const targetW = inputShape[2] || video.videoWidth;
+                            resizedTensor = tf.image.resizeBilinear(imgTensor, [targetH, targetW]);
+                        }
+                        const normalized = resizedTensor.div(255.0);
+                        const batched = normalized.expandDims(0);
+                        return graphModelRef.current.predict(batched);
+                    });
+
+                    const scoresTensor = Array.isArray(result) ? result[result.length - 1] : result;
+                    const scores = await scoresTensor.data();
+                    const labels = classLabelsRef.current;
+
+                    // --- MUDANÇA PRINCIPAL AQUI ---
+                    // Em vez de pegar só o maior, vamos criar uma lista com todos.
+                    const allPredictions = Array.from(scores)
+                        .map((score, index) => ({
+                            label: labels[index] || `Classe ${index}`,
+                            confidence: score
+                        }))
+                        .sort((a, b) => b.confidence - a.confidence) // Ordena da maior confiança para a menor
+                        .filter(p => p.confidence > 0.01); // Filtra resultados muito pequenos para não poluir a tela
+
+                    // Formata a lista para exibição e a salva na nossa ref
+                    lastPredictionTextRef.current = allPredictions;
+
+                    // Limpeza de memória
+                    if (result) {
+                        if (Array.isArray(result)) result.forEach(r => r.dispose()); else result.dispose();
+                    }
+                    if (scoresTensor && scoresTensor !== result) scoresTensor.dispose();
+
+                } catch (err) {
+                    console.error("Erro na predição em background:", err);
+                    lastPredictionTextRef.current = [{ label: "Erro na predição", confidence: 1 }];
                 }
-                const normalized = resizedTensor.div(255.0);
-                const batched = normalized.expandDims(0);
-                return graphModelRef.current.predict(batched);
-            });
-
-            const scoresTensor = Array.isArray(result) ? result[result.length - 1] : result;
-            const scores = await scoresTensor.data();
-            const labels = classLabelsRef.current;
-
-            // --- MUDANÇA PRINCIPAL AQUI ---
-            // Em vez de pegar só o maior, vamos criar uma lista com todos.
-            const allPredictions = Array.from(scores)
-                .map((score, index) => ({
-                    label: labels[index] || `Classe ${index}`,
-                    confidence: score
-                }))
-                .sort((a, b) => b.confidence - a.confidence) // Ordena da maior confiança para a menor
-                .filter(p => p.confidence > 0.01); // Filtra resultados muito pequenos para não poluir a tela
-
-            // Formata a lista para exibição e a salva na nossa ref
-            lastPredictionTextRef.current = allPredictions; 
-            
-            // Limpeza de memória
-            if (result) {
-                if (Array.isArray(result)) result.forEach(r => r.dispose()); else result.dispose();
+            } else {
+                lastPredictionTextRef.current = [];
             }
-            if (scoresTensor && scoresTensor !== result) scoresTensor.dispose();
-
-        } catch (err) {
-            console.error("Erro na predição em background:", err);
-            lastPredictionTextRef.current = [{ label: "Erro na predição", confidence: 1 }];
-        }
-    } else {
-        lastPredictionTextRef.current = [];
-    }
-}, 100);
+        }, 100);
 
         let rafId;
         async function frameLoop() {
@@ -344,57 +406,57 @@ export default function DetectorPage() {
             if (useCoco && cocoRef.current) {
                 const predictions = await cocoRef.current.detect(video);
                 drawCocoDetections(ctx, predictions);
-// Dentro do frameLoop, substitua o bloco 'else if (useKnn)'
+                // Dentro do frameLoop, substitua o bloco 'else if (useKnn)'
 
-} else if (useKnn) {
-    const predictions = await predictKNN(); // Agora predictKNN retorna um array
+            } else if (useKnn) {
+                const predictions = await predictKNN(); // Agora predictKNN retorna um array
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    if (predictions && predictions.length > 0) {
-        predictions.forEach((prediction, index) => {
-            const text = `${prediction.label} — ${(prediction.confidence * 100).toFixed(0)}%`;
-            const yPos = canvas.height - 40 - (index * 30);
+                if (predictions && predictions.length > 0) {
+                    predictions.forEach((prediction, index) => {
+                        const text = `${prediction.label} — ${(prediction.confidence * 100).toFixed(0)}%`;
+                        const yPos = canvas.height - 40 - (index * 30);
 
-            ctx.font = '20px Arial';
-            const textWidth = ctx.measureText(text).width;
-            
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            ctx.fillRect(8, yPos - 22, textWidth + 12, 28);
+                        ctx.font = '20px Arial';
+                        const textWidth = ctx.measureText(text).width;
 
-            ctx.fillStyle = index === 0 ? '#00FFAA' : '#FFFFFF';
+                        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                        ctx.fillRect(8, yPos - 22, textWidth + 12, 28);
 
-            ctx.fillText(text, 12, yPos);
-        });
-    }
-} else {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    const predictionsToDraw = lastPredictionTextRef.current;
+                        ctx.fillStyle = index === 0 ? '#00FFAA' : '#FFFFFF';
 
-    // Verifica se há predições para desenhar
-    if (predictionsToDraw && predictionsToDraw.length > 0) {
-        
-        // Desenha cada predição em uma linha
-        predictionsToDraw.forEach((prediction, index) => {
-            const text = `${prediction.label} — ${(prediction.confidence * 100).toFixed(1)}%`;
-            const yPos = canvas.height - 40 - (index * 30); // Calcula a posição Y para cada linha
+                        ctx.fillText(text, 12, yPos);
+                    });
+                }
+            } else {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            ctx.font = '20px Arial';
-            const textWidth = ctx.measureText(text).width;
+                const predictionsToDraw = lastPredictionTextRef.current;
 
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            ctx.fillRect(8, yPos - 22, textWidth + 12, 28);
-            
-            // Destaca a predição principal
-            ctx.fillStyle = index === 0 ? '#00FFAA' : '#FFFFFF'; 
-            
-            ctx.fillText(text, 12, yPos);
-        });
-    }
-}
+                // Verifica se há predições para desenhar
+                if (predictionsToDraw && predictionsToDraw.length > 0) {
+
+                    // Desenha cada predição em uma linha
+                    predictionsToDraw.forEach((prediction, index) => {
+                        const text = `${prediction.label} — ${(prediction.confidence * 100).toFixed(1)}%`;
+                        const yPos = canvas.height - 40 - (index * 30); // Calcula a posição Y para cada linha
+
+                        ctx.font = '20px Arial';
+                        const textWidth = ctx.measureText(text).width;
+
+                        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                        ctx.fillRect(8, yPos - 22, textWidth + 12, 28);
+
+                        // Destaca a predição principal
+                        ctx.fillStyle = index === 0 ? '#00FFAA' : '#FFFFFF';
+
+                        ctx.fillText(text, 12, yPos);
+                    });
+                }
+            }
             rafId = requestAnimationFrame(frameLoop);
         }
 
@@ -421,10 +483,6 @@ export default function DetectorPage() {
                     <button className="px-3 py-2 rounded bg-yellow-600 text-black" onClick={loadMobileNet} disabled={loadingModel}>Carregar MobileNet (p/ k-NN)</button>
                 </div>
                 <div className="flex gap-4 items-center">
-                    <label className="text-black flex items-center gap-2">Confiança mínima (Coco):
-                        <input type="range" min="0" max="1" step="0.01" value={minScore} onChange={(e) => setMinScore(parseFloat(e.target.value))} />
-                        <span className="ml-2 font-mono">{minScore.toFixed(2)}</span>
-                    </label>
                     <div className="ml-auto text-sm text-black">
                         <div>Status: <span className="font-medium">{status}</span></div>
                         <div>FPS: <span className="font-medium">{fps}</span></div>
@@ -445,17 +503,34 @@ export default function DetectorPage() {
                             <input className="px-2 py-1 border rounded flex-1" placeholder="Rótulo do exemplo (ex: caneta)" value={exampleLabel} onChange={(e) => setExampleLabel(e.target.value)} />
                             <button className="px-3 py-2 rounded bg-sky-600 text-white" onClick={() => addExample(exampleLabel)}>Adicionar exemplo</button>
                         </div>
+
                         <div className="flex gap-2 items-center">
                             <label className="flex items-center gap-2">k:
                                 <input type="number" min="1" max="20" value={k} onChange={(e) => setK(parseInt(e.target.value || 1))} className="w-16 px-2 py-1 border rounded" />
                             </label>
                             <button className={`px-3 py-2 rounded ${useKnn ? 'bg-red-600' : 'bg-green-600'} text-white`} onClick={handleKnnToggle}>{useKnn ? 'Desativar K-NN' : 'Ativar K-NN'}</button>
                         </div>
-                        <div className="flex gap-2">
-                            <button className="px-3 py-2 rounded bg-amber-500" onClick={saveDataset}>Salvar dataset</button>
-                            <button className="px-3 py-2 rounded bg-amber-700 text-white" onClick={loadDataset}>Carregar dataset</button>
+
+                        <div className="flex gap-2 flex-wrap">
+                            {/* Botões de persistência */}
+                            <button className="px-3 py-2 rounded bg-amber-500" onClick={saveDataset}>Salvar no Navegador</button>
+                            <button className="px-3 py-2 rounded bg-amber-700 text-white" onClick={loadDataset}>Carregar do Navegador</button>
                             <button className="px-3 py-2 rounded bg-gray-400" onClick={clearDataset}>Limpar dataset</button>
+
+                            {/* NOVOS BOTÕES de Importar/Exportar */}
+                            <button className="px-3 py-2 rounded bg-teal-600 text-white" onClick={exportDataset}>Exportar Dataset</button>
+                            <button className="px-3 py-2 rounded bg-teal-800 text-white" onClick={() => fileInputRef.current.click()}>Importar Dataset</button>
                         </div>
+
+                        {/* Input de arquivo escondido, controlado pelo botão "Importar" */}
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={importDataset}
+                            className="hidden"
+                            accept=".json"
+                        />
+
                         <div className="text-sm text-black">
                             <p>Contagem de exemplos por rótulo:</p>
                             <pre className="bg-gray-100 p-2 rounded text-xs">{JSON.stringify(labelCounts, null, 2)}</pre>
@@ -464,9 +539,10 @@ export default function DetectorPage() {
                     <div className="text-black">
                         <h3 className="font-semibold">Modo de teste e notas</h3>
                         <ol className="list-decimal pl-6 text-sm">
+                            <li>Clique no botão "Ligar câmera" e depois em "Carregar MobileNet (p/k-NN)"</li>
                             <li>Adicione pelo menos 10-20 exemplos por rótulo para começar.</li>
-                            <li>Ative o K-NN para usar seu classificador; desative para voltar ao modelo ativo.</li>
-                            <li>Use Salvar/Carregar para não perder os dados.</li>
+                            <li>Ative o K-NN para usar seu classificador</li>
+                            <li>Use Salvar/Carregar para não perder os dados. Ou se preferir exporte o dataset</li>
                         </ol>
                     </div>
                 </div>
