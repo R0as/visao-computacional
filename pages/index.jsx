@@ -472,8 +472,8 @@ export default function DetectorPage() {
 
     return (
         <div className="min-h-screen flex flex-col items-center bg-gray-50 p-6 text-black">
-            <h1 className="text-2xl text-black font-bold mb-4">Visão Computacional — Detector + k-NN (treinado por você)</h1>
-            <div className="w-full max-w-4xl bg-white rounded-lg shadow p-4 space-y-4">
+            <h1 className="text-2xl text-black font-bold mb-4">Visão Computacional</h1>
+            <div className="w-full bg-white rounded-lg shadow p-4 space-y-4">
                 <div className="flex gap-2 flex-wrap">
                     <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={startCamera} disabled={isCameraOn}>Ligar Câmera</button>
                     <button className="px-3 py-2 rounded bg-red-600 text-white" onClick={stopCamera} disabled={!isCameraOn}>Desligar Câmera</button>
@@ -481,12 +481,12 @@ export default function DetectorPage() {
                     <input value={customModelUrl} onChange={(e) => setCustomModelUrl(e.target.value)} className="px-2 py-1 border rounded" placeholder="URL do model.json" />
                     <button className="px-3 py-2 rounded bg-indigo-600 text-white" onClick={() => loadCustomModel(customModelUrl)} disabled={loadingModel}>Carregar modelo customizado</button>
                     <button className="px-3 py-2 rounded bg-yellow-600 text-black" onClick={loadMobileNet} disabled={loadingModel}>Carregar MobileNet (p/ k-NN)</button>
-                </div>
                 <div className="flex gap-4 items-center">
                     <div className="ml-auto text-sm text-black">
                         <div>Status: <span className="font-medium">{status}</span></div>
                         <div>FPS: <span className="font-medium">{fps}</span></div>
                     </div>
+                </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-black flex items-center justify-center">
@@ -537,12 +537,23 @@ export default function DetectorPage() {
                         </div>
                     </div>
                     <div className="text-black">
-                        <h3 className="font-semibold">Modo de teste e notas</h3>
+                        <h3 className="text-lg font-bold">Antes de tudo ligue a câmera</h3>
+                        <h3 className="font-semibold">Como usar o Coco-SSD:</h3>
                         <ol className="list-decimal pl-6 text-sm">
-                            <li>Clique no botão "Ligar câmera" e depois em "Carregar MobileNet (p/k-NN)"</li>
+                            <li>Basta clicar no botão verde "Carregar Coco-SSD"</li>
+                        </ol>
+                        <h3 className="font-semibold">Como usar o modelo customizado:</h3>
+                        <ol className="list-decimal pl-6 text-sm">
+                            <li>Treine seu modelo em: <a href="https://teachablemachine.withgoogle.com/">TeachableMachine</a> conforme esse <a href="https://www.youtube.com/watch?v=og3okifj5S4">vídeo, mas ao invés de fazer o download faça o upload do modelo.</a></li>
+                            <li>Com o link gerado coloque "/model.js" ao final dele para poder usarmos o modelo treinado em formato .json, e coloque o link no campo de texto do topo da tela.</li>
+                            <li>Por fim clique em "Carregar modelo customizado" que o modelo já estará funcionando.</li>
+                        </ol>
+                        <h3 className="font-semibold">Como usar o K-nn:</h3>
+                        <ol className="list-decimal pl-6 text-sm">
+                            <li>Clique em "Carregar MobileNet (p/ k-NN)."</li>
                             <li>Adicione pelo menos 10-20 exemplos por rótulo para começar.</li>
-                            <li>Ative o K-NN para usar seu classificador</li>
-                            <li>Use Salvar/Carregar para não perder os dados. Ou se preferir exporte o dataset</li>
+                            <li>Ative o K-NN para usar seu classificador.</li>
+                            <li>Use Salvar/Carregar para não perder os dados. Ou se preferir exporte o seu dataset.</li>
                         </ol>
                     </div>
                 </div>
